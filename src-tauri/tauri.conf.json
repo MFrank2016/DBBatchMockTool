@@ -15,25 +15,31 @@
         "fullscreen": false,
         "height": 600,
         "resizable": true,
-        "title": "DB Mock Tool",
+        "title": "数据库数据批量Mock工具",
         "width": 800
       }
     ]
   },
   "identifier": "com.dbmock.dev",
   "bundle": {
-    "active": true,
-    "category": "DeveloperTool",
-    "copyright": "",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
-    "targets": ["deb", "msi", "dmg"]
+      "active": true,
+      "targets": "all",
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ]
   },
   "productName": "db-mock-tool",
-  "version": "0.0.1"
+  "version": "0.0.1",
+  "plugins": {
+    "fs": {
+      "scope": {
+        "allow": ["$APPDATA/*", "$APPDATA/database.db"],
+        "deny": []
+      }
+    }
+  }
 }
