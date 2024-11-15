@@ -56,30 +56,40 @@
       </el-table>
     </el-dialog>
 
-    <el-dropdown
+    <div
       v-if="showContextMenu"
-      :visible="showContextMenu"
-      trigger="contextmenu"
-      :teleported="false"
-      @visible-change="handleContextMenuVisibleChange"
+      class="context-menu"
       :style="contextMenuStyle"
     >
-      <span></span>
-      <template #dropdown>
-        <el-dropdown-menu>
-          <el-dropdown-item @click="handleRefresh">刷新</el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
+      <el-menu>
+        <template v-if="shouldShowEditDelete">
+          <el-menu-item @click="handleEdit">
+            <el-icon><Edit /></el-icon>
+            <span>编辑</span>
+          </el-menu-item>
+          <el-menu-item @click="handleDelete" class="text-red">
+            <el-icon><Delete /></el-icon>
+            <span>删除</span>
+          </el-menu-item>
+          <el-divider />
+        </template>
+        <el-menu-item @click="handleRefresh">
+          <el-icon><Refresh /></el-icon>
+          <span>刷新</span>
+        </el-menu-item>
+      </el-menu>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import type Node from 'element-plus/es/components/tree/src/model/node'
 import { Connection, DataBase, DatabaseConfig, Table, ColumnInfo } from '../types/database'
+import { Edit, Delete, Refresh } from '@element-plus/icons-vue'
+import type { CSSProperties } from 'vue'
 
 const emit = defineEmits(['edit-database'])
 
@@ -179,17 +189,57 @@ const handleNodeClick = async (data: any, node: Node) => {
 
 // 删除数据库配置
 
-// 将 loadDatabaseConfigs 方法暴露给父组件
-defineExpose({
-  loadDatabases: async () => {
-    // 重置树并触发重新加载
-    if (treeRef.value) {
-      treeRef.value.store.setData([])
-      await loadNode({ level: 0 } as Node, (data) => {
-        treeData.value = data
-      })
-    }
+// 将 loadDatabases 方法定义为常量
+const loadDatabases = async () => {
+  // 重置树并触发重新加载
+  if (treeRef.value) {
+    treeRef.value.store.setData([])
+    await loadNode({ level: 0 } as Node, (data) => {
+      treeData.value = data
+    })
   }
+}
+
+// 处理删除操作
+const handleDelete = async () => {
+  console.log('点击删除按钮')
+  if (!currentNode.value?.id) return
+  
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这个数据库连接吗？',
+      '警告',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    const configId = currentNode.value.id
+    console.log('删除数据库配置:', configId)
+    await invoke('delete_database', { 
+      args: {
+        configId
+      }
+    })
+    
+    ElMessage.success('删除成功')
+    // 刷新列表
+    await loadDatabases()
+  } catch (err) {
+    if (err !== 'cancel') {
+      console.error('删除失败:', err)
+      ElMessage.error('删除失败')
+    }
+  } finally {
+    showContextMenu.value = false
+  }
+}
+
+// 暴露方法给父组件
+defineExpose({
+  loadDatabases
 })
 
 const showTableColumns = ref(false)
@@ -197,34 +247,42 @@ const currentTable = ref<Table | null>(null)
 const tableColumns = ref<ColumnInfo[]>([])
 
 const showContextMenu = ref(false)
-const contextMenuStyle = ref({
-  position: 'fixed',
+const contextMenuStyle = ref<CSSProperties>({
+  position: 'fixed' as const,
   top: '0px',
   left: '0px'
 })
 const currentNode = ref<Node | null>(null)
 
+// 添加计算属性来判断是否显示编辑和删除选项
+const shouldShowEditDelete = computed(() => {
+  console.log('当前节点数据:', currentNode.value)
+  const hasId = Boolean(currentNode.value?.id)
+  console.log('节点是否有 ID:', hasId)
+  return hasId
+})
+
 // 处理右键点击
-const handleContextMenu = (event: MouseEvent, node: Node) => {
+const handleContextMenu = (event: MouseEvent, node: any) => {
+  console.log('右键点击事件触发:', event)
+  console.log('节点数据:', node)
   event.preventDefault()
-  currentNode.value = node
+  
+  // 直接存储节点数据
+  currentNode.value = node  // 直接存储整个节点
+  console.log('存储后的节点数据:', currentNode.value)
+  
   showContextMenu.value = true
   contextMenuStyle.value = {
-    position: 'fixed',
-    top: event.clientY + 'px',
-    left: event.clientX + 'px'
-  }
-}
-
-// 处理右键菜单显示状态变化
-const handleContextMenuVisibleChange = (visible: boolean) => {
-  if (!visible) {
-    showContextMenu.value = false
+    position: 'fixed' as const,
+    top: `${event.clientY}px`,
+    left: `${event.clientX}px`
   }
 }
 
 // 处理刷新操作
 const handleRefresh = async () => {
+  console.log('点击刷新按钮')
   if (!currentNode.value) return
   
   try {
@@ -249,6 +307,32 @@ const handleNodeExpand = (_data: any, node: Node) => {
     node.expanded = false
   }
 }
+
+// 处理编辑操作
+const handleEdit = () => {
+  console.log('点击编辑按钮')
+  if (!currentNode.value?.id) return
+  const configId = currentNode.value.id
+  console.log('编辑数据库配置:', configId)
+  emit('edit-database', configId)
+  showContextMenu.value = false
+}
+
+// 添加全局点击事件处理
+const handleClickOutside = () => {
+  if (showContextMenu.value) {
+    showContextMenu.value = false
+  }
+}
+
+// 添加事件监听
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 <style scoped>
@@ -268,5 +352,49 @@ const handleNodeExpand = (_data: any, node: Node) => {
 
 .mr-1 {
   margin-right: 4px;
+}
+
+.text-red {
+  color: var(--el-color-danger);
+}
+
+:deep(.el-dropdown-menu__item.text-red:hover) {
+  color: var(--el-color-danger);
+  background-color: var(--el-color-danger-light-9);
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: white;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  padding: 4px 0;  /* 添加内边距 */
+}
+
+.context-menu :deep(.el-menu) {
+  border: none;
+  min-width: 150px;  /* 增加最小宽度 */
+  background: transparent;  /* 设置背景透明 */
+}
+
+.context-menu :deep(.el-menu-item) {
+  height: 36px;
+  line-height: 36px;
+  padding: 0 16px;
+}
+
+.context-menu :deep(.el-divider) {
+  margin: 4px 0;  /* 调整分割线间距 */
+}
+
+.text-red {
+  color: var(--el-color-danger);
+}
+
+.text-red:hover {
+  color: var(--el-color-danger) !important;
+  background-color: var(--el-color-danger-light-9) !important;
 }
 </style> 

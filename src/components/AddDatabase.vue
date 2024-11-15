@@ -1,9 +1,5 @@
 <template>
-  <div class="add-database">
-    <el-button type="primary" @click="showModal = true">
-      添加数据库
-    </el-button>
-    
+  <div class="add-database">    
     <el-dialog
       v-model="showModal"
       :title="isEdit ? '编辑数据库' : '添加数据库'"
@@ -266,6 +262,18 @@ const databaseTypes = [
   { label: 'Oracle', value: DatabaseType.Oracle },
   { label: 'DM', value: DatabaseType.DM }
 ]
+
+
+// 添加显示对话框的方法
+const showDialog = () => {
+  console.log('显示添加数据库对话框')
+  showModal.value = true
+}
+
+// 暴露方法给父组件
+defineExpose({
+  showDialog
+})
 </script>
 
 <style scoped>

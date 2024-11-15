@@ -1,5 +1,7 @@
-# Vue 3 + TypeScript + Vite
+# 数据库批量Mock工具
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+为数据库批量生成测试数据
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+使用场景：
+1. 数据库性能测试前造数时
+2. 慢SQL治理时复现及验证
