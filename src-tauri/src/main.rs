@@ -9,89 +9,242 @@ use db::DatabaseManager;
 use models::{DatabaseConfig, TestConnectionResult};
 use error::AppError;
 use tauri::{State, Manager};
-use log::{error, info, debug, LevelFilter};
+use log::{info, debug, error};
 use std::io::Write;
+use chrono::Local;
+use std::fs;
+use env_logger::{Builder, Target};
+use serde::Deserialize;
+
+// 定义应用状态
+pub struct AppState {
+    pub db_manager: DatabaseManager
+}
+
+// 定义所有命令的参数结构体
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteDatabaseArgs {
+    config_id: i64
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GetDatabaseArgs {
+    config_id: i64
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListDatabasesArgs {
+    config_id: i64
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListTablesArgs {
+    config_id: i64,
+    database: String
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TestConnectionArgs {
+    config_id: i64
+}
 
 #[tauri::command]
 async fn add_database(
     config: DatabaseConfig,
-    db: State<'_, DatabaseManager>,
+    state: State<'_, AppState>,
 ) -> Result<i64, AppError> {
-    db.add_config(&config)
+    state.db_manager.add_config(&config)
 }
 
 #[tauri::command]
 async fn list_databases(
-    db: State<'_, DatabaseManager>,
-) -> Result<Vec<DatabaseConfig>, AppError> {
-    db.list_configs()
+    args: ListDatabasesArgs,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, AppError> {
+    debug!("获取数据库列表, config_id: {}", args.config_id);
+    state.db_manager.list_databases(args.config_id)
+}
+
+#[tauri::command]
+async fn list_tables(
+    args: ListTablesArgs,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, AppError> {
+    debug!("获取表列表, config_id: {}, database: {}", args.config_id, args.database);
+    state.db_manager.list_tables(args.config_id, &args.database)
 }
 
 #[tauri::command]
 async fn test_connection(
-    config: DatabaseConfig,
-    db: State<'_, DatabaseManager>,
+    args: TestConnectionArgs, 
+    state: State<'_, AppState>
 ) -> Result<TestConnectionResult, String> {
-    debug!("收到连接测试请求");
-    println!("收到连接测试请求");
+    debug!("测试数据库连接, config_id: {}", args.config_id);
+    
+    let config = state.db_manager.get_config(args.config_id)
+        .map_err(|e| e.to_string())?;
+        
+    match state.db_manager.test_connection(&config) {
+        Ok(_) => Ok(TestConnectionResult {
+            success: true,
+            message: "连接成功".to_string()
+        }),
+        Err(e) => Ok(TestConnectionResult {
+            success: false,
+            message: e.to_string()
+        })
+    }
+}
 
-    match db.test_connection(&config) {
+#[tauri::command]
+async fn test_connection_with_config(
+    config: DatabaseConfig,
+    state: State<'_, AppState>
+) -> Result<TestConnectionResult, String> {
+    debug!("测试数据库连接配置: {:?}", config);
+    
+    // 直接测试连接
+    match state.db_manager.test_connection(&config) {
+        Ok(_) => Ok(TestConnectionResult {
+            success: true,
+            message: "连接成功".to_string()
+        }),
+        Err(e) => Ok(TestConnectionResult {
+            success: false,
+            message: e.to_string()
+        })
+    }
+}
+
+#[tauri::command]
+async fn delete_database(
+    args: DeleteDatabaseArgs,
+    state: State<'_, AppState>
+) -> Result<(), AppError> {
+    debug!("接收到删除数据库配置请求: config_id = {}", args.config_id);
+    
+    match state.db_manager.delete_config(args.config_id) {
         Ok(_) => {
-            let msg = format!("数据库 {} 连接成功", config.name);
-            info!("{}", msg);
-            println!("{}", msg);
-            Ok(TestConnectionResult {
-                success: true,
-                message: msg,
-            })
+            info!("成功删除数据库配置: config_id = {}", args.config_id);
+            Ok(())
         }
         Err(e) => {
-            let msg = format!("数据库 {} 连接失败: {}", config.name, e);
-            error!("{}", msg);
-            println!("{}", msg);
-            Ok(TestConnectionResult {
-                success: false,
-                message: msg,
-            })
+            error!("删除数据库配置失败: config_id = {}, error = {:?}", args.config_id, e);
+            Err(e)
         }
     }
 }
 
+#[tauri::command]
+async fn update_database(
+    config: DatabaseConfig,
+    state: State<'_, AppState>,
+) -> Result<(), AppError> {
+    debug!("更新数据库配置: {:?}", config);
+    state.db_manager.update_config(&config)
+}
+
+#[tauri::command]
+async fn list_configs(
+    state: State<'_, AppState>,
+) -> Result<Vec<DatabaseConfig>, AppError> {
+    debug!("获取数据库配置列表");
+    state.db_manager.list_configs()
+}
+
+#[tauri::command]
+async fn get_database(
+    args: GetDatabaseArgs,
+    state: State<'_, AppState>
+) -> Result<DatabaseConfig, AppError> {
+    debug!("获取数据库配置, config_id: {}", args.config_id);
+    state.db_manager.get_config(args.config_id)
+}
+
 fn main() {
-    // 配置日志
-    env_logger::Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{} [{}] - {}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .filter(None, LevelFilter::Debug)
-        .init();
-
-    info!("应用程序启动");
-    debug!("调试日志已启用");
-
+    setup_logging();
+    println!("日志系统已初始化完成");
+    
     tauri::Builder::default()
         .setup(|app| {
-            debug!("初始化数据库管理器...");
-            let db = DatabaseManager::new(app.handle())
-                .map_err(|e| {
-                    error!("数据库管理器初始化失败: {}", e);
-                    e
-                })?;
-            app.manage(db);
+            debug!("Tauri 应用程序开始初始化");
+            // 获取 app_handle
+            let app_handle = app.handle();
+            
+            // 初始化数据库管理器
+            debug!("开始初始化数据库管理器");
+            let db_manager = DatabaseManager::new(&app_handle)?;
             debug!("数据库管理器初始化完成");
+            
+            // 创建应用状态
+            let state = AppState { db_manager };
+            // 管理应用状态
+            app.manage(state);
+            debug!("应用状态初始化完成");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             add_database,
+            list_configs,
             list_databases,
-            test_connection
+            list_tables,
+            test_connection,
+            test_connection_with_config,
+            delete_database,
+            update_database,
+            get_database
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+// 设置日志
+fn setup_logging() {
+    let log_dir = "logs";
+    fs::create_dir_all(log_dir).expect("Failed to create log directory");
+    
+    let log_file = format!("{}/app_{}.log", log_dir, Local::now().format("%Y-%m-%d"));
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_file)
+        .expect("Failed to open log file");
+
+    // 创建一个多写入器，同时写入文件和控制台
+    let mut builder = Builder::new();
+    
+    // 设置日志格式
+    builder
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} [{}] - {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .filter_level(LOG_LEVEL)
+        // 添加文件输出
+        .target(Target::Pipe(Box::new(file)))
+        // 添加控制台输出
+        .target(Target::Stdout);
+
+    // 初始化日志系统
+    builder.init();
+
+    // 输出初始化日志
+    info!("应用程序启动");
+    debug!("调试日志已启用");
+    debug!("日志系统初始化完成");
+}
+
+#[cfg(debug_assertions)]
+const LOG_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
+#[cfg(not(debug_assertions))]
+const LOG_LEVEL: log::LevelFilter = log::LevelFilter::Info;

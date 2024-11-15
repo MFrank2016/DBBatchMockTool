@@ -4,35 +4,37 @@ import AddDatabase from './components/AddDatabase.vue'
 import { ref } from 'vue'
 
 const databaseListRef = ref()
+const editId = ref<number>()
 
 const handleDatabaseAdded = () => {
-  // 刷新数据库列表
   databaseListRef.value?.loadDatabases()
+}
+
+const handleDatabaseUpdated = () => {
+  databaseListRef.value?.loadDatabases()
+}
+
+const handleEditDatabase = (id: number) => {
+  editId.value = id
 }
 </script>
 
 <template>
-  <n-config-provider>
-    <n-message-provider>
-      <n-layout class="layout">
-        <n-layout has-sider>
-          <n-layout-sider
-            bordered
-            collapse-mode="width"
-            :collapsed-width="0"
-            :width="300"
-            show-trigger
-            class="sider"
-          >
-            <DatabaseList ref="databaseListRef" />
-          </n-layout-sider>
-          <n-layout-content class="content">
-            <AddDatabase @database-added="handleDatabaseAdded" />
-          </n-layout-content>
-        </n-layout>
-      </n-layout>
-    </n-message-provider>
-  </n-config-provider>
+  <el-container class="layout">
+    <el-aside width="300px" class="sider">
+      <DatabaseList 
+        ref="databaseListRef"
+        @edit-database="handleEditDatabase"
+      />
+    </el-aside>
+    <el-main class="content">
+      <AddDatabase 
+        v-model:edit-id="editId"
+        @database-added="handleDatabaseAdded"
+        @database-updated="handleDatabaseUpdated"
+      />
+    </el-main>
+  </el-container>
 </template>
 
 <style scoped>
@@ -41,7 +43,7 @@ const handleDatabaseAdded = () => {
 }
 
 .sider {
-  background: var(--n-color);
+  background: var(--el-color-primary-light-9);
 }
 
 .content {

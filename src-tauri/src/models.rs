@@ -35,9 +35,11 @@ impl FromStr for DatabaseType {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DatabaseConfig {
     pub id: Option<i64>,
     pub name: String,
+    #[serde(rename = "type_")]
     pub type_: DatabaseType,
     pub host: String,
     pub username: Option<String>,
