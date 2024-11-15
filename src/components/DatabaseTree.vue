@@ -244,7 +244,7 @@ const handleRefresh = async () => {
 }
 
 // 添加 node-expand 事件处理，阻止表节点展开
-const handleNodeExpand = (data: any, node: Node) => {
+const handleNodeExpand = (_data: any, node: Node) => {
   if (node.level === 3) { // 表级别
     node.expanded = false
   }
