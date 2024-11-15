@@ -18,6 +18,10 @@
           @database-added="handleDatabaseAdded"
           @database-updated="handleDatabaseUpdated"
         />
+        <FieldMappingPanel
+          :current-table="currentTable"
+          :columns="tableColumns"
+        />
       </el-main>
     </el-container>
   </el-container>
@@ -28,6 +32,8 @@ import { ref, onMounted } from 'vue'
 import MenuBar from './components/MenuBar.vue'
 import DatabaseTree from './components/DatabaseTree.vue'
 import AddDatabase from './components/AddDatabase.vue'
+import FieldMappingPanel from './components/FieldMappingPanel.vue'
+import type { Table } from './types/database'
 import { useMenuStore } from './stores/menu'
 import { MenuCommand, AddDatabaseCommand } from './types/menu'
 
@@ -35,6 +41,8 @@ const menuStore = useMenuStore()
 const addDatabaseRef = ref()
 const databaseTreeRef = ref()
 const editId = ref<number | undefined>(undefined)
+const currentTable = ref<Table | undefined>(undefined)
+const tableColumns = ref<any[]>([])
 
 // 注册菜单命令处理函数
 onMounted(() => {
@@ -64,6 +72,12 @@ const handleDatabaseUpdated = async () => {
   console.log('数据库更新成功，刷新列表')
   await databaseTreeRef.value?.loadDatabases()
 }
+
+// // 在 DatabaseTree 组件中触发表选择事件时更新当前表和列信息
+// const handleTableSelect = (table: Table, columns: any[]) => {
+//   currentTable.value = table
+//   tableColumns.value = columns
+// }
 </script>
 
 <style scoped>
@@ -83,5 +97,8 @@ const handleDatabaseUpdated = async () => {
 
 .content {
   padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 </style>

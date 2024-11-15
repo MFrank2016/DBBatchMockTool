@@ -62,20 +62,26 @@
       :style="contextMenuStyle"
     >
       <el-menu>
-        <template v-if="shouldShowEditDelete">
-          <el-menu-item @click="handleEdit">
-            <el-icon><Edit /></el-icon>
-            <span>编辑</span>
-          </el-menu-item>
-          <el-menu-item @click="handleDelete" class="text-red">
-            <el-icon><Delete /></el-icon>
-            <span>删除</span>
-          </el-menu-item>
-          <el-divider />
-        </template>
-        <el-menu-item @click="handleRefresh">
-          <el-icon><Refresh /></el-icon>
-          <span>刷新</span>
+        <el-menu-item @click="handleEdit">
+          <el-icon><Edit /></el-icon>
+          <span>编辑</span>
+        </el-menu-item>
+        <el-menu-item @click="handleDelete" class="text-red">
+          <el-icon><Delete /></el-icon>
+          <span>删除</span>
+        </el-menu-item>
+      </el-menu>
+    </div>
+
+    <div
+      v-if="showTableContextMenu"
+      class="context-menu"
+      :style="contextMenuStyle"
+    >
+      <el-menu>
+        <el-menu-item @click="handleViewStructure">
+          <el-icon><View /></el-icon>
+          <span>查看表结构</span>
         </el-menu-item>
       </el-menu>
     </div>
@@ -83,18 +89,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import type Node from 'element-plus/es/components/tree/src/model/node'
-import { Connection, DataBase, DatabaseConfig, Table, ColumnInfo } from '../types/database'
-import { Edit, Delete, Refresh } from '@element-plus/icons-vue'
+import { DataBase, DatabaseConfig, Table, ColumnInfo } from '../types/database'
+import { Edit, Delete, View } from '@element-plus/icons-vue'
 import type { CSSProperties } from 'vue'
 
-const emit = defineEmits(['edit-database'])
+const emit = defineEmits(['edit-database', 'table-select'])
 
 const treeRef = ref()
-const treeData = ref<Connection[]>([])
+const treeData = ref<NodeDataType[]>([])
 
 // 树的配置
 const defaultProps = {
@@ -104,8 +110,9 @@ const defaultProps = {
 }
 
 // 获取节点图标
-const getNodeIcon = (node: Node) => {
-  switch (node.level) {
+const getNodeIcon = (node: any) => {
+  const level = node.level || node.data?.level
+  switch (level) {
     case 1: return 'Connection'
     case 2: return 'DataBase' 
     case 3: return 'Grid'
@@ -113,15 +120,47 @@ const getNodeIcon = (node: Node) => {
   }
 }
 
-// 异步加载子节点
-const loadNode = async (node: Node, resolve: (data: any[]) => void) => {
+// 定义树节点数据结构
+interface TreeNodeData {
+  id?: number;
+  name: string;
+  level: number;
+  type_?: string;
+  configId?: number;
+  dbName?: string;
+}
+
+// 保留一个 currentNode 声明
+const currentNode = ref<TreeNodeData | null>(null)
+
+// 定义基础节点类型
+interface TreeNodeBase {
+  level: number;
+  isLeaf: boolean;
+}
+
+// 定义各种节点类型
+interface ConnectionNodeData extends DatabaseConfig, TreeNodeBase {}
+interface DatabaseNodeData extends DataBase, TreeNodeBase {}
+interface TableNodeData extends Table, TreeNodeBase {}
+
+// 使用联合类型定义所有可能的节点数据类型
+type NodeDataType = ConnectionNodeData | DatabaseNodeData | TableNodeData;
+
+// 定义 resolve 函数的类型
+type ResolveFunction = (data: NodeDataType[]) => void;
+
+// 修改 loadNode 函数
+const loadNode = async (node: Node, resolve: ResolveFunction) => {
   if (node.level === 0) {
     try {
       const configs = await invoke<DatabaseConfig[]>('list_configs')
-      resolve(configs.map(config => ({
+      const connectionNodes: ConnectionNodeData[] = configs.map(config => ({
         ...config,
+        level: 1,
         isLeaf: false
-      })))
+      }))
+      resolve(connectionNodes)
     } catch (err) {
       console.error('加载数据库配置失败:', err)
       ElMessage.error('加载数据库配置失败')
@@ -131,13 +170,15 @@ const loadNode = async (node: Node, resolve: (data: any[]) => void) => {
     try {
       const databases = await invoke<DataBase[]>('list_database_schemas', {
         args: {
-          configId: node.data.id
+          configId: (node.data as ConnectionNodeData).id
         }
       })
-      resolve(databases.map(db => ({
+      const dbNodes: DatabaseNodeData[] = databases.map(db => ({
         ...db,
+        level: 2,
         isLeaf: false
-      })))
+      }))
+      resolve(dbNodes)
     } catch (err) {
       console.error('加载数据库列表失败:', err)
       ElMessage.error('加载数据库列表失败')
@@ -147,14 +188,17 @@ const loadNode = async (node: Node, resolve: (data: any[]) => void) => {
     try {
       const tables = await invoke<Table[]>('list_database_tables', {
         args: {
-          configId: node.parent.data.id,
+          configId: (node.parent.data as ConnectionNodeData).id,
           dbName: node.data.name
         }
       })
-      resolve(tables.map(table => ({
+      const tableNodes: TableNodeData[] = tables.map(table => ({
         ...table,
-        isLeaf: true
-      })))
+        level: 3,
+        isLeaf: true,
+        type_: 'TABLE'  // 确保设置 type_ 属性
+      }))
+      resolve(tableNodes)
     } catch (err) {
       console.error('加载数据表列表失败:', err)
       ElMessage.error('加载数据表列表失败')
@@ -163,35 +207,8 @@ const loadNode = async (node: Node, resolve: (data: any[]) => void) => {
   }
 }
 
-// 节点点击事件
-const handleNodeClick = async (data: any, node: Node) => {
-  if (node.level === 3) { // 表级别
-    try {
-      currentTable.value = data
-      const columns = await invoke<ColumnInfo[]>('get_table_columns', {
-        args: {
-          configId: node.parent.parent.data.id,
-          dbName: node.parent.data.name,
-          tableName: data.name
-        }
-      })
-      console.log('表结构信息:', columns)
-      tableColumns.value = columns
-      showTableColumns.value = true
-    } catch (err) {
-      console.error('获取表结构失败:', err)
-      ElMessage.error('获取表结构失败')
-    }
-  }
-}
-
-// 编辑数据库配置
-
-// 删除数据库配置
-
-// 将 loadDatabases 方法定义为常量
+// 修改 loadDatabases 函数
 const loadDatabases = async () => {
-  // 重置树并触发重新加载
   if (treeRef.value) {
     treeRef.value.store.setData([])
     await loadNode({ level: 0 } as Node, (data) => {
@@ -200,128 +217,175 @@ const loadDatabases = async () => {
   }
 }
 
-// 处理删除操作
-const handleDelete = async () => {
-  console.log('点击删除按钮')
-  if (!currentNode.value?.id) return
-  
-  try {
-    await ElMessageBox.confirm(
-      '确定要删除这个数据库连接吗？',
-      '警告',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-    
-    const configId = currentNode.value.id
-    console.log('删除数据库配置:', configId)
-    await invoke('delete_database', { 
-      args: {
-        configId
-      }
-    })
-    
-    ElMessage.success('删除成功')
-    // 刷新列表
-    await loadDatabases()
-  } catch (err) {
-    if (err !== 'cancel') {
-      console.error('删除失败:', err)
-      ElMessage.error('删除失败')
-    }
-  } finally {
-    showContextMenu.value = false
-  }
-}
-
 // 暴露方法给父组件
 defineExpose({
   loadDatabases
 })
 
+// 其他变量声明
 const showTableColumns = ref(false)
 const currentTable = ref<Table | null>(null)
 const tableColumns = ref<ColumnInfo[]>([])
-
 const showContextMenu = ref(false)
+const showTableContextMenu = ref(false)
 const contextMenuStyle = ref<CSSProperties>({
   position: 'fixed' as const,
   top: '0px',
   left: '0px'
-})
-const currentNode = ref<Node | null>(null)
-
-// 添加计算属性来判断是否显示编辑和删除选项
-const shouldShowEditDelete = computed(() => {
-  console.log('当前节点数据:', currentNode.value)
-  const hasId = Boolean(currentNode.value?.id)
-  console.log('节点是否有 ID:', hasId)
-  return hasId
 })
 
 // 处理右键点击
 const handleContextMenu = (event: MouseEvent, node: any) => {
   console.log('右键点击事件触发:', event)
   console.log('节点数据:', node)
+  console.log('节点级别:', node.level)
+  
   event.preventDefault()
   
-  // 直接存储节点数据
-  currentNode.value = node  // 直接存储整个节点
-  console.log('存储后的节点数据:', currentNode.value)
-  
-  showContextMenu.value = true
-  contextMenuStyle.value = {
-    position: 'fixed' as const,
-    top: `${event.clientY}px`,
-    left: `${event.clientX}px`
+  try {
+    if (node.level === 3) {
+      // 从节点获取数据
+      const nodeData = {
+        tableName: node.label || node.data?.name,
+        configId: undefined as number | undefined,
+        dbName: undefined as string | undefined
+      }
+      
+      // 安全地获取父节点
+      if (treeRef.value) {
+        const currentNode = treeRef.value.getNode(node)
+        console.log('当前节点:', currentNode)
+        
+        if (currentNode?.parent) {
+          const dbNode = currentNode.parent
+          console.log('数据库节点:', dbNode)
+          nodeData.dbName = dbNode.label || dbNode.data?.name
+          
+          if (dbNode.parent) {
+            const connNode = dbNode.parent
+            console.log('连接节点:', connNode)
+            nodeData.configId = connNode.data?.id
+          }
+        }
+      }
+      
+      console.log('节点信息:', nodeData)
+      
+      if (!nodeData.tableName) {
+        throw new Error('无法获取表名')
+      }
+      
+      // 构建节点信息
+      currentNode.value = {
+        name: nodeData.tableName,
+        level: node.level,
+        type_: node.data?.type_ || 'TABLE',
+        configId: nodeData.configId,
+        dbName: nodeData.dbName
+      }
+      
+      showTableContextMenu.value = true
+      showContextMenu.value = false
+    } else if (node.level === 1) {
+      // 处理连接节点
+      currentNode.value = {
+        name: node.label || node.data?.name || '',
+        level: node.level,
+        type_: node.data?.type_,
+        configId: node.data?.id
+      }
+      
+      showContextMenu.value = true
+      showTableContextMenu.value = false
+    }
+    
+    contextMenuStyle.value = {
+      position: 'fixed' as const,
+      top: `${event.clientY}px`,
+      left: `${event.clientX}px`
+    }
+    
+    console.log('当前节点信息:', currentNode.value)
+  } catch (err) {
+    console.error('处理右键菜单时出错:', err)
+    ElMessage.error('无法显示菜单')
+    // 重置菜单状态
+    showContextMenu.value = false
+    showTableContextMenu.value = false
   }
 }
 
-// 处理刷新操作
-const handleRefresh = async () => {
-  console.log('点击刷新按钮')
-  if (!currentNode.value) return
-  
+// 修改 handleViewStructure 函数
+const handleViewStructure = async () => {
+  if (!currentNode.value) {
+    console.error('无法获取节点信息')
+    ElMessage.error('无法获取表结构信息')
+    return
+  }
+
   try {
-    // 清空子节点
-    currentNode.value.childNodes = []
-    // 重新加载
-    await loadNode(currentNode.value, (data) => {
-      currentNode.value?.setData(data)
+    if (!currentNode.value.configId || !currentNode.value.dbName || !currentNode.value.name) {
+      console.error('缺少必要的节点信息:', currentNode.value)
+      ElMessage.error('无法获取表结构信息')
+      return
+    }
+
+    const params = {
+      configId: currentNode.value.configId,
+      dbName: currentNode.value.dbName,
+      tableName: currentNode.value.name
+    }
+
+    console.log('获取表结构参数:', params)
+
+    const columns = await invoke<ColumnInfo[]>('get_table_columns', {
+      args: params
     })
-    ElMessage.success('刷新成功')
+
+    console.log('表结构信息:', columns)
+    currentTable.value = {
+      name: currentNode.value.name,
+      type_: currentNode.value.type_ || 'TABLE',
+      engine: undefined,
+      comment: undefined
+    }
+    tableColumns.value = columns
+    showTableColumns.value = true
   } catch (err) {
-    console.error('刷新失败:', err)
-    ElMessage.error('刷新失败')
+    console.error('获取表结构失败:', err)
+    ElMessage.error('获取表结构失败')
   } finally {
+    showTableContextMenu.value = false
+  }
+}
+
+// 添加点击外部关闭菜单的处理
+const handleClickOutside = () => {
+  if (showContextMenu.value) {
     showContextMenu.value = false
+  }
+  if (showTableContextMenu.value) {
+    showTableContextMenu.value = false
   }
 }
 
 // 添加 node-expand 事件处理，阻止表节点展开
 const handleNodeExpand = (_data: any, node: Node) => {
-  if (node.level === 3) { // 表级别
+  // 阻止数据表节点（level 3）展开
+  if (node.level === 3) {
     node.expanded = false
   }
 }
 
-// 处理编辑操作
-const handleEdit = () => {
-  console.log('点击编辑按钮')
-  if (!currentNode.value?.id) return
-  const configId = currentNode.value.id
-  console.log('编辑数据库配置:', configId)
-  emit('edit-database', configId)
-  showContextMenu.value = false
-}
-
-// 添加全局点击事件处理
-const handleClickOutside = () => {
-  if (showContextMenu.value) {
-    showContextMenu.value = false
+// 修改 handleNodeClick 函数
+const handleNodeClick = (data: NodeDataType, node: Node) => {
+  if (node.level === 3) {
+    const tableData = data as TableNodeData
+    emit('table-select', {
+      configId: node.parent.parent.data.id,
+      dbName: node.parent.data.name,
+      tableName: tableData.name
+    })
   }
 }
 
@@ -333,6 +397,59 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
 })
+
+// 添加删除处理函数
+const handleDelete = async () => {
+  if (!currentNode.value || !isConnectionNode(currentNode.value)) {
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这个数据库连接吗？',
+      '警告',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    const configId = (currentNode.value as ConnectionNodeData).id
+    await invoke('delete_database', { 
+      args: {
+        configId
+      }
+    })
+    
+    ElMessage.success('删除成功')
+    await loadDatabases()
+  } catch (err) {
+    if (err !== 'cancel') {
+      console.error('删除失败:', err)
+      ElMessage.error('删除失败')
+    }
+  } finally {
+    showContextMenu.value = false
+  }
+}
+
+// 添加编辑处理函数
+const handleEdit = () => {
+  if (!currentNode.value || !isConnectionNode(currentNode.value)) {
+    return
+  }
+  
+  const configId = (currentNode.value as ConnectionNodeData).id
+  emit('edit-database', configId)
+  showContextMenu.value = false
+}
+
+// 添加类型守卫函数
+function isConnectionNode(node: TreeNodeData): boolean {
+  return node.level === 1
+}
+
 </script>
 
 <style scoped>
