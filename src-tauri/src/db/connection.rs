@@ -68,7 +68,7 @@ impl DatabaseConnection for SQLite3Connection {
 
         let mut stmt = conn.prepare(
             "SELECT name FROM sqlite_master 
-             WHERE type='table' 
+             WHERE type='table' AND name NOT LIKE 'sqlite_%'
              ORDER BY name"
         ).map_err(|e| AppError::Connection(format!("查询失败：{}", e)))?;
 

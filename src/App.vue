@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import DatabaseList from './components/DatabaseList.vue'
 import AddDatabase from './components/AddDatabase.vue'
+import DatabaseTree from './components/DatabaseTree.vue'
 import { ref } from 'vue'
 
-const databaseListRef = ref()
+const databaseTreeRef = ref()
 const editId = ref<number>()
 
 const handleDatabaseAdded = () => {
-  databaseListRef.value?.loadDatabases()
+  databaseTreeRef.value?.loadDatabases()
 }
 
 const handleDatabaseUpdated = () => {
-  databaseListRef.value?.loadDatabases()
+  databaseTreeRef.value?.loadDatabases()
 }
 
 const handleEditDatabase = (id: number) => {
@@ -22,8 +22,8 @@ const handleEditDatabase = (id: number) => {
 <template>
   <el-container class="layout">
     <el-aside width="300px" class="sider">
-      <DatabaseList 
-        ref="databaseListRef"
+      <DatabaseTree 
+        ref="databaseTreeRef"
         @edit-database="handleEditDatabase"
       />
     </el-aside>

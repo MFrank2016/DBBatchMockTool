@@ -52,4 +52,32 @@ pub struct DatabaseConfig {
 pub struct TestConnectionResult {
     pub success: bool,
     pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DataBase {
+    pub name: String,
+    pub encoding: Option<String>,
+    pub collation: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Table {
+    pub name: String,
+    pub type_: String,
+    pub engine: Option<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListDatabaseSchemasArgs {
+    pub config_id: i32
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListDatabaseTablesArgs {
+    pub config_id: i32,
+    pub db_name: String
 } 

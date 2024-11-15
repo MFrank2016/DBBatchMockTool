@@ -176,12 +176,16 @@ impl DatabaseManager {
     }
 
     pub fn list_databases(&self, config_id: i64) -> Result<Vec<String>, AppError> {
+        debug!("获取数据库列表, config_id: {}", config_id);
+        
         let config = self.get_config(config_id)?;
         let conn = connection::create_connection(&config)?;
         conn.list_databases()
     }
 
     pub fn list_tables(&self, config_id: i64, database: &str) -> Result<Vec<String>, AppError> {
+        debug!("获取数据表列表, config_id: {}, database: {}", config_id, database);
+        
         let config = self.get_config(config_id)?;
         let conn = connection::create_connection(&config)?;
         conn.list_tables(database)

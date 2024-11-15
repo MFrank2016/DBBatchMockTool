@@ -6,7 +6,7 @@ mod models;
 mod error;
 
 use db::DatabaseManager;
-use models::{DatabaseConfig, TestConnectionResult};
+use models::{DatabaseConfig, TestConnectionResult, ListDatabaseSchemasArgs, ListDatabaseTablesArgs, DataBase, Table};
 use error::AppError;
 use tauri::{State, Manager};
 use log::{info, debug, error};
@@ -166,6 +166,43 @@ async fn get_database(
     state.db_manager.get_config(args.config_id)
 }
 
+#[tauri::command]
+async fn list_database_schemas(
+    args: ListDatabaseSchemasArgs,
+    state: State<'_, AppState>
+) -> Result<Vec<DataBase>, AppError> {
+    debug!("获取数据库列表, config_id: {}", args.config_id);
+    
+    let names = state.db_manager.list_databases(args.config_id as i64)?;
+    let databases = names.into_iter()
+        .map(|name| DataBase {
+            name,
+            encoding: None,
+            collation: None,
+        })
+        .collect();
+    Ok(databases)
+}
+
+#[tauri::command] 
+async fn list_database_tables(
+    args: ListDatabaseTablesArgs,
+    state: State<'_, AppState>
+) -> Result<Vec<Table>, AppError> {
+    debug!("获取数据表列表, config_id: {}, db_name: {}", args.config_id, args.db_name);
+    
+    let names = state.db_manager.list_tables(args.config_id as i64, &args.db_name)?;
+    let tables = names.into_iter()
+        .map(|name| Table {
+            name,
+            type_: "TABLE".to_string(),
+            engine: None,
+            comment: None,
+        })
+        .collect();
+    Ok(tables)
+}
+
 fn main() {
     setup_logging();
     println!("日志系统已初始化完成");
@@ -197,7 +234,9 @@ fn main() {
             test_connection_with_config,
             delete_database,
             update_database,
-            get_database
+            get_database,
+            list_database_schemas,
+            list_database_tables,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
