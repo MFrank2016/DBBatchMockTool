@@ -1,5 +1,6 @@
 use serde::Serialize;
 use thiserror::Error;
+use rusqlite;
 
 #[derive(Error, Debug, Serialize)]
 pub enum AppError {
@@ -16,5 +17,11 @@ pub enum AppError {
 impl From<AppError> for String {
     fn from(err: AppError) -> Self {
         err.to_string()
+    }
+}
+
+impl From<rusqlite::Error> for AppError {
+    fn from(err: rusqlite::Error) -> Self {
+        AppError::Database(err.to_string())
     }
 } 

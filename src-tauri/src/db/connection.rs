@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::models::{DatabaseConfig, DatabaseType};
+use crate::models::{DatabaseConfig, DatabaseType, ColumnInfo};
 use rusqlite::Connection as SQLiteConnection;
 use std::path::Path;
 use log::{debug, error};
@@ -8,6 +8,7 @@ pub trait DatabaseConnection {
     fn test_connection(&self) -> Result<(), AppError>;
     fn list_databases(&self) -> Result<Vec<String>, AppError>;
     fn list_tables(&self, database: &str) -> Result<Vec<String>, AppError>;
+    fn get_table_columns(&self, table_name: &str) -> Result<Vec<ColumnInfo>, AppError>;
 }
 
 pub struct SQLite3Connection {
@@ -79,6 +80,55 @@ impl DatabaseConnection for SQLite3Connection {
 
         Ok(tables)
     }
+
+    fn get_table_columns(&self, table_name: &str) -> Result<Vec<ColumnInfo>, AppError> {
+        let conn = SQLiteConnection::open(&self.path)
+            .map_err(|e| AppError::Connection(format!("无法打开数据库：{}", e)))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT 
+                name,           -- 列名
+                type,           -- 数据类型
+                [notnull],      -- 是否可空
+                pk,            -- 是否主键
+                dflt_value     -- 默认值
+             FROM pragma_table_info(?)"
+        ).map_err(|e| AppError::Connection(format!("查询失败：{}", e)))?;
+
+        let columns = stmt.query_map([table_name], |row| {
+            let type_str: String = row.get(1)?;
+            // 解析类型字符串，提取类型和长度信息
+            let (type_, length) = parse_sqlite_type(&type_str);
+            
+            Ok(ColumnInfo {
+                name: row.get(0)?,
+                type_: type_.to_string(),
+                length,
+                nullable: !row.get::<_, i32>(2)?.eq(&1),
+                is_primary: row.get::<_, i32>(3)?.eq(&1),
+                comment: None,
+            })
+        }).map_err(|e| AppError::Connection(format!("查询失败：{}", e)))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| AppError::Connection(format!("处理列信息失败：{}", e)))?;
+
+        Ok(columns)
+    }
+}
+
+// 添加一个辅助函数来解析 SQLite 类型字符串
+fn parse_sqlite_type(type_str: &str) -> (&str, Option<i32>) {
+    // 处理带有长度的类型，如 VARCHAR(255)
+    if let Some(pos) = type_str.find('(') {
+        if let Some(end_pos) = type_str.find(')') {
+            let base_type = &type_str[..pos];
+            let length_str = &type_str[pos + 1..end_pos];
+            if let Ok(length) = length_str.parse::<i32>() {
+                return (base_type, Some(length));
+            }
+        }
+    }
+    (type_str, None)
 }
 
 pub fn create_connection(config: &DatabaseConfig) -> Result<Box<dyn DatabaseConnection>, AppError> {

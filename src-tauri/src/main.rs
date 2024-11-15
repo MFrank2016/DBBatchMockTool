@@ -5,8 +5,8 @@ mod db;
 mod models;
 mod error;
 
-use db::DatabaseManager;
-use models::{DatabaseConfig, TestConnectionResult, ListDatabaseSchemasArgs, ListDatabaseTablesArgs, DataBase, Table};
+use db::{DatabaseManager, connection};
+use models::{DatabaseConfig, TestConnectionResult, ListDatabaseSchemasArgs, ListDatabaseTablesArgs, DataBase, Table, ColumnInfo, GetTableColumnsArgs};
 use error::AppError;
 use tauri::{State, Manager};
 use log::{info, debug, error};
@@ -203,6 +203,19 @@ async fn list_database_tables(
     Ok(tables)
 }
 
+#[tauri::command]
+async fn get_table_columns(
+    args: GetTableColumnsArgs,
+    state: State<'_, AppState>
+) -> Result<Vec<ColumnInfo>, AppError> {
+    debug!("获取表结构, config_id: {}, db_name: {}, table_name: {}", 
+           args.config_id, args.db_name, args.table_name);
+    
+    let config = state.db_manager.get_config(args.config_id as i64)?;
+    let conn = connection::create_connection(&config)?;
+    conn.get_table_columns(&args.table_name)
+}
+
 fn main() {
     setup_logging();
     println!("日志系统已初始化完成");
@@ -237,6 +250,7 @@ fn main() {
             get_database,
             list_database_schemas,
             list_database_tables,
+            get_table_columns,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -55,3 +55,12 @@ export enum TreeNodeType {
   Database = 'database',
   Table = 'table'
 } 
+
+export interface ColumnInfo {
+  name: string;
+  type_: string;
+  length?: number;
+  nullable: boolean;
+  isPrimary: boolean;
+  comment?: string;
+} 

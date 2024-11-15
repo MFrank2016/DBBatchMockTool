@@ -80,4 +80,24 @@ pub struct ListDatabaseSchemasArgs {
 pub struct ListDatabaseTablesArgs {
     pub config_id: i32,
     pub db_name: String
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnInfo {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub length: Option<i32>,
+    pub nullable: bool,
+    pub is_primary: bool,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetTableColumnsArgs {
+    pub config_id: i32,
+    pub db_name: String,
+    pub table_name: String,
 } 
