@@ -58,7 +58,7 @@ export enum TreeNodeType {
 
 export interface ColumnInfo {
   name: string;
-  type_: string;
+  type: string;
   length?: number;
   nullable: boolean;
   isPrimary: boolean;

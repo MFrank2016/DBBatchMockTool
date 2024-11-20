@@ -97,7 +97,12 @@ import { DataBase, DatabaseConfig, Table, ColumnInfo } from '../types/database'
 import { Edit, Delete, View } from '@element-plus/icons-vue'
 import type { CSSProperties } from 'vue'
 
-const emit = defineEmits(['edit-database', 'table-select'])
+const emit = defineEmits<{
+  'edit-database': [id: number]
+  'table-select': [params: { configId: number, dbName: string, tableName: string }]
+  'update:currentTable': [table: Table]
+  'update:tableColumns': [columns: ColumnInfo[]]
+}>()
 
 const treeRef = ref()
 const treeData = ref<NodeDataType[]>([])
@@ -243,10 +248,23 @@ const handleContextMenu = (event: MouseEvent, node: any) => {
   event.preventDefault()
   
   try {
-    if (node.level === 3) {
-      // 从节点获取数据
+    if (node.level === 1) {
+      // 处理连接节点
+      currentNode.value = {
+        name: node.name,
+        level: node.level,
+        type_: node.type_,
+        configId: node.id
+      }
+      
+      console.log('连接节点信息:', currentNode.value)
+      
+      showContextMenu.value = true
+      showTableContextMenu.value = false
+    } else if (node.level === 3) {
+      // 处理表节点
       const nodeData = {
-        tableName: node.label || node.data?.name,
+        tableName: node.name,
         configId: undefined as number | undefined,
         dbName: undefined as string | undefined
       }
@@ -259,7 +277,7 @@ const handleContextMenu = (event: MouseEvent, node: any) => {
         if (currentNode?.parent) {
           const dbNode = currentNode.parent
           console.log('数据库节点:', dbNode)
-          nodeData.dbName = dbNode.label || dbNode.data?.name
+          nodeData.dbName = dbNode.data?.name
           
           if (dbNode.parent) {
             const connNode = dbNode.parent
@@ -269,7 +287,7 @@ const handleContextMenu = (event: MouseEvent, node: any) => {
         }
       }
       
-      console.log('节点信息:', nodeData)
+      console.log('表节点信息:', nodeData)
       
       if (!nodeData.tableName) {
         throw new Error('无法获取表名')
@@ -279,24 +297,13 @@ const handleContextMenu = (event: MouseEvent, node: any) => {
       currentNode.value = {
         name: nodeData.tableName,
         level: node.level,
-        type_: node.data?.type_ || 'TABLE',
+        type_: node.type_,
         configId: nodeData.configId,
         dbName: nodeData.dbName
       }
       
       showTableContextMenu.value = true
       showContextMenu.value = false
-    } else if (node.level === 1) {
-      // 处理连接节点
-      currentNode.value = {
-        name: node.label || node.data?.name || '',
-        level: node.level,
-        type_: node.data?.type_,
-        configId: node.data?.id
-      }
-      
-      showContextMenu.value = true
-      showTableContextMenu.value = false
     }
     
     contextMenuStyle.value = {
@@ -378,14 +385,67 @@ const handleNodeExpand = (_data: any, node: Node) => {
 }
 
 // 修改 handleNodeClick 函数
-const handleNodeClick = (data: NodeDataType, node: Node) => {
-  if (node.level === 3) {
-    const tableData = data as TableNodeData
-    emit('table-select', {
-      configId: node.parent.parent.data.id,
-      dbName: node.parent.data.name,
-      tableName: tableData.name
-    })
+const handleNodeClick = async (data: any, node: Node) => {
+  console.log('节点点击:', data, node)
+  
+  if (node.level === 3) { // 表节点
+    try {
+      // 获取必要的信息
+      let configId: number | undefined
+      let dbName: string | undefined
+      
+      if (node.parent) {
+        const dbNode = node.parent
+        dbName = dbNode.data?.name
+        
+        if (dbNode.parent) {
+          const connNode = dbNode.parent
+          configId = connNode.data?.id
+        }
+      }
+      
+      if (!configId || !dbName) {
+        console.error('无法获取必要的节点信息')
+        return
+      }
+      
+      // 获取表结构
+      const columns = await invoke<ColumnInfo[]>('get_table_columns', {
+        args: {
+          configId,
+          dbName,
+          tableName: data.name
+        }
+      })
+      
+      console.log('获取到的表结构:', columns)
+      
+      // 确保列信息包含所有必要的字段
+      const processedColumns = columns.map(col => ({
+        name: col.name,
+        type: col.type,
+        length: col.length,
+        nullable: col.nullable,
+        isPrimary: col.isPrimary,
+        comment: col.comment
+      }))
+      
+      // 更新当前表信息
+      const tableInfo: Table = {
+        name: data.name,
+        type_: data.type_ || 'TABLE',
+        engine: '',
+        comment: ''
+      }
+      
+      // 触发事件通知父组件更新状态
+      emit('update:currentTable', tableInfo)
+      emit('update:tableColumns', processedColumns)
+      
+    } catch (err) {
+      console.error('获取表结构失败:', err)
+      ElMessage.error('获取表结构失败')
+    }
   }
 }
 
@@ -434,14 +494,15 @@ const handleDelete = async () => {
   }
 }
 
-// 添加编辑处理函数
+// 修改 handleEdit 函数
 const handleEdit = () => {
-  if (!currentNode.value || !isConnectionNode(currentNode.value)) {
+  if (!currentNode.value?.configId) {
+    console.error('无法获取配置ID:', currentNode.value)
+    ElMessage.error('无法编辑数据库配置')
     return
   }
   
-  const configId = (currentNode.value as ConnectionNodeData).id
-  emit('edit-database', configId)
+  emit('edit-database', currentNode.value.configId)
   showContextMenu.value = false
 }
 
